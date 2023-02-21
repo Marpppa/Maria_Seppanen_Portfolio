@@ -11,7 +11,8 @@ This is my portfolio, mostly concisting of course projects from my studies. Ther
 * Multivariate Methods
 * Numerical Methods
 * Regression Analysis 
-* 
+
+
 ### Programming
 * Data Structures and Algorithms
 * Object Oriented Programming
