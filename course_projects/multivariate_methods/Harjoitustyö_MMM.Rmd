@@ -1,0 +1,167 @@
+---
+title: "Harjoitustyö"
+subtitle: "Monimuuttujamenetelmät, kevät 2022"
+author: "Maria Seppänen"
+output: 
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(ggplot2)
+library(ellipse)
+library(mclust)
+library(flexmix)
+library(cluster)
+```
+
+## Aineiston alkuperä
+
+Harjoitustyössä käytetty aineisto kuvastaa Tampereella olevia vuokra-asuntoja. Aineisto löytyy Tampereen
+Yliopiston Moodlesivulta “Tilastomenetelmien työkalupakki”. Sieltä löytyy “Tilastotieteen peruskurssien
+hajoitusaineistoja 2003-2018”, josta lopulta työssä käytetty aineisto “Lumilaudat.xls”. 
+
+Aineiston havaintoyksiköt ovat yksittäisiä lumilautoja ja muuttujat ovat näiden lumilautojen piirteitä. Aineiston muuttujista on näissä analyyseissä käytetty vain viittä muuttujaa "MERKKI", "MALLI", "KANTTI", "HINTA" ja "PITUUS".  Muuttujat “MERKKI” ja "MALLI" ovat kategorisia muuttujia, jotka sisältävät kunkin lumilaudan merkin ja mallin. Koska "MALLI" on kategorinen muuttuja, jossa on 35 eri vaihtoehtoa, muutan sen numeeriseksi muuttujaksi, joka saa arvoja 1 ja 35 väliltä. Muuttujat “HINTA” ja "PITUUS" ovat jatkuvia numeerisia muuttujia, jotka kuvastavat kyseisen laudan hintaa ja pituutta. Muuttuja "KANTTI" on myös numeetinen jatkuva muuttuja. 
+Havaintoja on yhteensä 80.
+
+
+
+Ensin tarkastelen aineiston muuttujia sekä numeerisesti, että graafisesti. Sen jälkeen etsin pääkomponenttianalyysin avulla kuinka moneen komponenttiin aineiston muuttujat "MALLI", "KANTTI", "HINTA" ja "PITUUS" ja tarkastelen graafisesti, jakautuvatko nämä komponentit merkeittäin. Teen myös ryhmittelyanalyysin k-means-menetelmällä kolmelle jatkuvalle numeeriselle muuttujalle "KANTTI", "HINTA" ja "PITUUS". Viimeisenä luon näille samoille muuttujille mixture-mallin. Jotta r-koodin kirjoittaminen ja lukeminen olisi mukavampaa, muutan muuttujien nimet suurista kirjaimista pieniksi kirjaimiksi.
+
+
+
+```{r data, echo=FALSE}
+lumilaudat <- read_excel("Lumilaudat.xlsx")
+names(lumilaudat)<-c("merkki","malli","kenelle","tarkoitus","kantti","hinta","pituus","merkkima")
+lumilaudat <- as.data.frame(lumilaudat)
+attach(lumilaudat)
+lumilaudat_kat <- lumilaudat
+# Malli numeeriseksi muuttujaksi analyysejä varten
+malli_k <- factor(malli)
+malli_k <- as.numeric(malli_k)
+lumilaudat[2] <- malli_k
+
+```
+
+## Aineiston numeerinen ja graafinen tarkastelu
+
+Tarkastellaan lumilautojen kantin, hinnan sekä pituuden perustunnuslukuja. Alla on taulukko, josta löytyvät muuttujien keskiarvot, mediaanit, keskihajonnat, sekä minimi- ja maksimiarvot. Keskiarvot vaihtelevat 116.3025 (kantti) ja 486.5500 (hinta) välillä. Keskiarvot ja mediaanit ovat hyvin lähellä toisiaan, mikä viittaisi siihen, että havainnot ovat suhteellisen tasaisesti jakautuneet. Jos nämä eroaisivat toisistaan, olisi datassa oltava taipumusta johonkin suuntaan tai jotain poikkeuksellisia havaintoja. Minimi- ja maksimiarvot eroavat toisistaan myös, eli muuttujat ovat jakautuneet hyvin erilaisille asteikoille. Tämä tulee myöhemmin ottaa huomioon pääkomponenttianalyysiä tehdessä.
+
+```{r means, echo=FALSE}
+keskiarvo <- apply(lumilaudat[,5:7], 2, mean)
+mediaani <- apply(lumilaudat[5:7], 2, median)
+keskihajonta <- apply(lumilaudat[,5:7],2, sd)
+min <- apply(lumilaudat[,5:7], 2, min)
+max <- apply(lumilaudat[,5:7], 2, max)
+
+tunnusluvut <- cbind(keskiarvo, mediaani, keskihajonta, min, max)
+tunnusluvut
+```
+
+Tarkastellaan kategoristen muuttujien jakautumista. Merkit ovat jakautuneet tasaisesti, jokaista merkkiä on 20 havaintoa. Malleja on  hyvin monta ja  ovat jakautuneet hyvin tasaisesti, jokaista mallia ollen 1-3. Alla olevasta histogrammista, jossa mallit on jaettu viiden ryhmiin, voi myös visuaalisesti hahmottaa suhteellisen tasaista jakautumista.
+
+```{r, echo=FALSE, fig.height = 3.5, fig.width= 5,}
+apply(lumilaudat[,1:2], 2, table)
+hist(lumilaudat$malli, main="Eri mallien lukumäärät", xlab="malli", ylab="lukumäärä")
+```
+
+Tarkastellaan myös muuttujen välisiä korrelaatioita graafisesti. Kaikilla muuttujilla on keskenään pieni positiivinen korrelaatio, mutta muuttujien kantti ja hinta välillä on hyvin vahva positiivinen korrelaatio. Tämä viittaa siihen, että pääkomponenttianalyysi voisi olla hyödyllinen.
+
+```{r, echo=FALSE, fig.height = 4, fig.width= 5,}
+plot.new()
+plotcorr(cor(lumilaudat[c(2,5,6,7)]), type="lower", diag=FALSE, main="Muuttujien välinen korrelaatio")
+```
+
+## Pääkomponenttianalyysi
+
+Pääkomponenttianalyysi on apuna aineistoissa, joissa muuttujia on hyvin paljon ja/tai ne korreloivat keskenään. Vaikka juuri tässä aineistossa kyse ei välttämättä muuttujien määrästä, tämän menetelmä on hyödyllinen muuttujien korrelaation vuoksi. Tässä analyysimenetelmässä aineiston havaituista muuttujista luodaan ns. pääkomponentit, joita voi kutsua myös latenteiksi muuttujiksi. Näillä pääkomponenteilla pyritään selittämään havaittujien muuttujien korrelaatio pienemmällä uusilla, korreloimattomilla pääkomponenteilla. Pääkomponentit voidaan määritellä niin, että j:s pääkomponentti on
+$$y_j = a_{j1}x_1+a_{j2}x_2+...+a_{jp}x_p=\mathbf{a'_jx},$$
+joka maksimoi $y_j$:n varianssin ehdoilla $\mathbf{a'_ja_j}=1$ ja $\mathbf{a'_ja_i}=0 (i<j)$.
+
+Itse analyysissä on otettava huomioon muuttujien eri vaihteluvälit, joten käytän scale()-funktiota muuttujien standardoimiseen. Analyysiin käytän muuttujia "malli", "kantti", "hinta" ja "pituus". Pääkomponenttialanyysin tulos alla.
+
+```{r PCA, echo=FALSE}
+lumilaudat_p <-scale(lumilaudat[,c(2,5,6,7)])
+S <- cov(lumilaudat_p)
+ll_pca <-princomp(lumilaudat_p)
+summary(ll_pca, loadings=TRUE)
+```
+
+Neljästä komponentista jo kahden ensimmäisen kumulatiivinen selitysosuus on 0.8454, eli noin 85 prosenttia. Kolmella pääkomponentilla päästään jo yli 99 prosentin lukemiin. Käytänössä 70-90 prosentin selitysosuus on hyvä, joten tässä mallissa sopiva pääkomponenttien määrä olisi kaksi. Kun tarkastelee erillisiä latauksia, voi huomata, että ensimmäinen pääkomponentti sisältää enimmäkseen muuttujien "kantti" ja "pituus" vaihtelun, toinen pääkomponentti muuttujan "malli" ja kolmas pääkomponentti muuttujan "hinta". Neljännen pääkomponentin lataukset ovat hyvin heikkoja. Alla visuaalinen mallinnus kahdesta ensimmäisestä pääkomponentista. 
+
+```{r PCA2, echo=FALSE, fig.height = 3.3, fig.width= 5}
+plot(ll_pca$scores[,1:2], col=factor(merkki))
+```
+
+Pääkomponenttien selitysosuudet voi myös mallintaa graafisesti. Alla kuva, josta voi myös huomata, että kaksi pääkomponenttia olisi tässä tilanteessa tarpeeksi. Kuvan alta löytyy myös neljän pääkomponentin korrelaatio alkuperäisten muuttujien kanssa. Suurin korrelaatio löytyy ensimmäisestä kahdesta pääkomponentista, kuten oli odotettavissakin.
+
+```{r PCA3, echo=FALSE, fig.height = 3, fig.width= 5,}
+v <- eigen(S)
+
+comp <- 1:4
+plot(v$va~comp)
+cor(lumilaudat_p,ll_pca$scores)
+```
+\newpage
+
+## Ryhmittelyanalyysi
+
+Ryhmittelyanalyysin tarkoitus on ryhmitellä aineisto sopiviin klustereihin niin, että yhden klusterin sisältämät havainnot ovat jollain tapaa samankaltaisia, mutta havainnot eri klustereissa eroavat toisistaan. Käytän ryhmittelyanalyysiin tällä kertaa kmeans-menetelmää. Analyysiin käytän muuttujia "hinta", "kantti" ja "pituus". Tarkastellaan tällä menetelmällä luotua kuvaajaa. Suurin hyppy tapahtuu yhden ja kahden välillä, jonka jälkeen erot ovat hyvin pieniä. Siis kaksi klusteria olisi tämän perusteella sopivin ratkaisu. 
+
+```{r Ryhmittelyanalyysi, echo=FALSE, fig.height = 3.5, fig.width= 5}
+set.seed(123)
+## kmeans
+ss <- rep(0,5);k<-1:5
+for (j in 1:5){ss[j] <- sum(kmeans(lumilaudat[,5:7],j)$withinss)}
+plot(ss~k, ylab="Within SS", type="l")
+```
+
+Nämä kaksi klusteria voi myös mallintaa graafisesti, kuten on alla. Siinä nähdään, että klusterit ovat täysin erillisiä, eli ei ole ryhmien välisiä päällekkäisyyksiä, mikä on toivottua. 
+
+```{r clusplot, echo=FALSE, fig.height=3.5}
+km <-kmeans(lumilaudat[,5:7],2)
+#km$centers
+
+clusplot(lumilaudat[,5:7], km$cluster, color=TRUE, shade=TRUE, labels=2, lines=0, main="K-means menetelmän mukaiset klusterit")
+```
+\newpage
+
+## Mixture-malli
+
+Mixture-malli liittyy läheisesti klusterianalyysiin, mutta edellisestä poiketen luodaan tilastollinen malli. Mixture-mallia tehdessä oletetaan, että aineisto on jakautunut ryhmiin niin, että jokaisella on oma tiheysfunktionsa. Tarkastellaan siis muuttujien "kantti", "hinta" sekä "pituus" tiheysfunktiota. Näiden muuttujien tiheysfunktiot sisältävät monta huippua ja epätasaisuuksia, jotka viittaavat mahdolliseen moniuloitteiseen normaalijakaumaan. Mixture-mallit sopivat tällaiseen aineistoon mainiosti.
+
+
+```{r, echo=FALSE, fig.height=7.5}
+plot.new()
+par(mfrow=c(3,1))
+otsikot=c("Lumilaudan kantti", "Lumilaudan hinta", "Lumilaudan pituus")
+for (i in 5:7){j= i-3; plot(density(lumilaudat[,i]), main=otsikot[j-1])}
+```
+
+\newpage 
+
+Luodaan siis näille kolmelle muuttujalle mixture-malli. Alta voi nähdä, että mallissa aineisto on jaettu kolmeen komponenttiin. BIC-informaatiokriteerin perusteella kovarianssirakenteen oletetaan olevan $\Sigma_k=c\mathbf{T}_k\mathbf{\Lambda}_k\mathbf{T}'_k$.
+
+```{r Mixture-malli, echo=FALSE}
+BIC <- mclustBIC(lumilaudat[,5:7])
+#summary(BIC) # paras EVV with 3 components
+mixture <- Mclust(lumilaudat[,5:7], x=BIC)
+summary(mixture, param=T)
+```
+
+Alla taulukko klusterien jakautumisesta merkeittäin. Ne eivät jakaudu tarkalleen merkeittäin, mutta esimerkiksi "Burton" on täysin ensimmäisessä klusterissa ja "Lamar" täysin toisessa. "Ride" on enimmäkseen ensimmäisessä klusterissa ja "Forum" on kaikkein eniten jakautunut eri klustereihin.
+
+```{r table, echo=FALSE}
+table(mixture$classification,merkki)
+``` 
+
+\newpage 
+
+Alla myös kaavio mallin klusterien jakautumisesta. Tekemäni mixture-malli sopii huonoiten muuttujien "malli" ja "kantti" kuvastamiseen, sillä niissä klusterit ovat osittain myös täysin päällekäin, jolloin ryhmien välillä ei ole eroa ja ne voisi todennäköisesti jakaa vain kahteen klusteriin. Muuten klusterit ovat erillään ja näyttävät toimivan aineistoon suhteellisen hyvin. 
+
+
+```{r Mixture2, echo=FALSE, fig.height=3.5}
+plot(mixture, what="classification", main="Mixture-mallin klusterit")
+```
