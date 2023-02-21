@@ -18,4 +18,4 @@ This is my portfolio, mostly concisting of course projects from my studies. Ther
 * Object Oriented Programming
 
 
-*Note:* I have only recently started making this portfolio, so it is still a work in progress. My small ersonal projects will be added in the future as well! 
+*Note:* I have only recently started making this portfolio, so it is still a work in progress. My small personal projects will be added in the future as well! 
