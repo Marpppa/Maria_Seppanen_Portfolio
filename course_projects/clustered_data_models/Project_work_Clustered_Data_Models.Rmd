@@ -1,0 +1,382 @@
+---
+title: "Project Work" 
+author: "Maria Seppänen, K438799"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This document is the reviewed project work for the course Clustered Data Models. 
+
+Changes made are
+
+- changed the type of Phase to factor
+- the first box plot has been changed to a more appropriate one
+- added modeling for variance and removed incorrect interpretation of variance
+- conclusions using residual deviance have been removed
+- added binned plots
+- removed models, which did not work well with Phase as factorial.
+
+
+
+\newpage
+
+# The dataset 
+
+The dataset I chose to use for this project is *quilpie* from the GLMsData library in R. It describes the total July rainfall at Quilpie, Queensland, Australia from 1921 to 1988. There are 68 observations with 6 variables, of which I will be using the following 4:
+
+* *Year* the year of the observation, one taken each year
+* *SOI* the July average southern oscillation index, or SOI, a numeric value
+* *Phase* the SOI phase; a factor with these values: 1 (consistently
+negative), 2 (consistently positive), 3 (rapidly falling), 4 (rapidly rising), or 5 (consistently
+near zero)
+* *y* an indicator for whether or not the total monthly July rainfall exceeds 10 millimetres: a factor
+where 1 means the rainfall exceeds 10mm, and 0 means the rainfall is 10mm or less.
+
+I realized a little bit too late, that a dataset with a hierarchical structure or even just more variables would've been more interesting to model but I did my best to make it work. 
+
+# The research problem
+
+In this project, I want to see, whether or not the SOI value and SOI phase can be used to model if the rainfall will exceed 10 millimetres or not. Phase is a categorical variable, that can be used for clustering in the models. I will be trying out a few different options and determining the best one out of them.
+
+# Visualizing the data
+```{r libraries, include=FALSE}
+library(GLMsData)
+library(glmmML)
+library(lme4)
+library(nlme)
+library(gee)
+library(dplyr)
+library(arm)
+data(quilpie)
+```
+Before deciding, what kind of model will be appropriate, let's look at the variables available to us. Below is a figure with *SOI* and *Phase* plotted against the response variable *y*. It is apparent that there there are differences in the values of both *Phase* and *SOI* for different *y* values. This means that there could be a possibility to model *y* using these two variables in some way. 
+
+*Phase* is can have values 1, 2, 3, 4, and 5.  There seems to be a difference in the distribution of phases between y = 0 and y = 1. 
+
+*SOI* is a numeric value between -20 and 20. When *y* = 0, *SOI* is around 0. When *y* = 1, *SOI* has a much larger variability and gets values on the whole -20 to 20 spectrum. 
+
+```{r, include=FALSE}
+quilpie$Phase <- factor(quilpie$Phase)
+attach(quilpie)
+```
+
+Below is also a graph with *SOI* and *Phase* plotted against *y* = 0 and *y* = 1. It can be seen that nether *SOI* nor *Phase* are constant between the different values of *y*. We can also notice that values of *SOI* seem to be different depending on the value of *Phase*.
+
+```{r, echo=FALSE, fig.height= 4, warning=FALSE}
+par(mfrow = c(1, 2))
+y0 <- subset(quilpie, y == 0)
+y1 <- subset(quilpie, y == 1)
+barplot(table(y0$Phase), xlab="Phase", ylab="count of y = 0", ylim=c(0,14))
+barplot(table(y1$Phase), xlab="Phase", ylab="count of y = 1")
+par(mfrow = c(1, 2))
+boxplot(y, SOI, ylab= "SOI", xlab = "y", names = c(0,1))
+plot(Phase, SOI, ylab= "SOI", xlab = "Phase", names = c(1,2,3,4,5))
+```
+Modeling the variance in the case of binomial data, where the response is the number of successes (or a proportion of successes) for different combinations of values of explanatory variables. The model is overfitted and the results do not make much sense. 
+```{r plots, echo=FALSE, fig.height= 4, warning=FALSE}
+#print("Variance of y, when Phase is")
+#for (x in 1:5) {
+#  s = subset(quilpie, Phase == x, select = c(y))
+#  print(paste(x, "->", round(var(s$y),2)))
+#}
+trials <- 0
+successes <- 0
+for (x in 1:5) {
+  s = subset(quilpie,Phase==x)
+  successes <- append(successes, sum(s$y))
+  trials <- append(trials, nrow(s))
+}
+bin_dat <- cbind(successes=successes, failures = trials-successes, Phase= c(0,1,2,3,4,5))[2:6,]
+
+variance_mod <- glm(cbind(successes, failures) ~ factor(Phase), family = binomial(), data = data.frame(bin_dat))
+summary(variance_mod)
+
+```
+\newpage
+
+# Modeling
+
+## Generalized Linear Model
+Since the response variable *y* is binomial, it makes sense to start with a simple logistic GLM with SOI as the explanatory variable. The following is the summary of this model. 
+```{r, echo=FALSE}
+glm_mod <- glm(y ~ SOI, family=binomial)
+summary(glm_mod)
+```
+This model has an intercept of 0.05 and SOI coefficient of 0.15, with SOI being a statistically significant variable with the biggest possible confidence interval. The standard errors are 0.28 and 0.04 for the intercept and SOI respectively. The AIC value is 79.901, which will become relevant later on, when comparing different models.
+
+```{r, include=FALSE, echo=FALSE}
+#plot(residuals(glm_mod, type = "pearson")) +
+#  abline(h=0)
+```
+
+```{r logistic, include=FALSE, echo=FALSE}
+#xSOI <-seq (-20, 20, 0.01)
+#ySOI <- predict(glm_mod, list(SOI=xSOI),type="response")
+#plot(SOI, y)
+#lines(xSOI, ySOI, col = "red", lwd = 2)
+```
+## Generalized Linear Model with interaction
+
+Next I decided to try adding *SOI* and *Phase* interaction variable into the previous model. This resulted in the following logistic GLM. 
+```{r, echo = FALSE}
+glm_mod2 <- glm(y ~ SOI*Phase, family=binomial)
+summary(glm_mod2)
+#plot(residuals(glm_mod2, type = "pearson")) +
+#  abline(h=0)
+```
+This model does not have any statistically significant variables and the AIC is 85.204. This indicates a worse fit than the first model.  
+
+## Generalized Linear Mixed Model
+
+As there is variability in the baseline level of y across different phases (groups), it makes sense to try adding *Phase* as a random effect. This creates a logistic GLMM with *SOI* as the explanatory variable and *Phase* as the random effect, and a summary of it is like follows. 
+```{r, echo=FALSE}
+glmm_mod <- glmer(y ~ SOI + (1|Phase), family = binomial)
+summary(glmm_mod)
+#plot(residuals(glmm_mod, type = "pearson")) +
+#abline(h=0)
+```
+The random effect for Phase shows no variance (0), suggesting that there is no meaningful random variability across the different phases, so a GLMM might not be the best choice. 
+
+```{r gee, echo = FALSE}
+#data_gee <- arrange(quilpie, Phase) # arranging the data to work with gee
+#gee_mod <- geeglm(y ~ SOI*Phase, id=Phase, family = binomial, corstr = "exchangeable", data = data_gee)
+#summary(gee_mod)
+```
+
+
+```{r, include=FALSE}
+#gee_mod2 <- gee(y ~ SOI*Phase, id=Phase, family = binomial, corstr = "AR-M", Mv=6, data = data_gee)
+#summary(gee_mod2)
+
+#library(geepack)
+#gee_mod3 <- geeglm(y ~ SOI*Phase, id=Phase, family = binomial, corstr = "exchangeable", data = data_gee)
+
+#summary(gee_mod3)
+```
+
+
+## Model comparisons
+Now that we have tried out multiple models, let's summarize their comparison. Firstly, let's look at the AIC values for the simple and interaction logistic GLMs and the GLMM model. 
+```{r, echo=FALSE}
+AIC(glm_mod,glm_mod2, glmm_mod)
+```
+The best one according to AIC values is the simplest GLM model. 
+
+```{r sderror, echo=FALSE, include=FALSE}
+#print("Interaction GLM:")
+#summary(glm_mod2)$coef
+#print("Quasibinomial interaction GLM:")
+#summary(quasi_mod)$coef
+```
+
+## Model fit of the best model
+
+Let's look at the residuals of the models.
+
+
+```{r gee_plots, echo=FALSE}
+binnedplot(fitted(glm_mod),residuals(glm_mod, type = "response"))
+```
+The residuals look good for the first and simplest GLM model. There are no clear outliers and there is no distinguishable pattern. Most binned residuals fall into the expectated interval. 
+
+```{r, echo=FALSE}
+binnedplot(fitted(glm_mod2),residuals(glm_mod2, type = "response"))
+```
+There is a visible pattern in the second GLM model. Even though residuals fall into the expected area, they do not look random. This also suggests that the simpler model is better in this case. 
+
+Based on the information above, I chose first GLM model as the best fit. The residuals below look good and the AIC value was the smallest of the three models compared. 
+```{r final model, echo=FALSE}
+summary(glm_mod)
+```
+
+```{r new_gee, echo=FALSE}
+#gee_mod4 <- geeglm(y ~ SOI:Phase + I(Phase)^2, id=Phase, family = binomial, corstr = "exchangeable", data = data_gee)
+#summary(gee_mod4)
+#plot(residuals(gee_mod4, type = "response")) +
+#  abline(h=0)
+```
+
+### Formula of the model
+
+Now let's dissect the GLM model that I ended up with. The model formula is
+
+$$\text{logit}(\frac{P(y=1)}{1-P(y = 1)}) = \beta_0 + \beta_1 \cdot \text{SOI}$$
+where
+$y$ is the binary response variable,
+
+$\beta_0$ is the intercept and
+
+$\beta_1$ is the coefficient for the variable *SOI*.
+
+# The results and interpretation
+
+Now we can deduct that
+
+* For each 1-unit increase in SOI, the log-odds of the total July rainfall at Quilpie, Queensland, Australia from 1921 to 1988 being over 10 mm increase by 0.14642
+
+* SOI is a statistically significant variable and there is no visible random effect from Phase.
+
+# Conclusion
+
+In the case of the quilpie dataset in GLMsData in R, the best model to describe the binomial variable *y* (whether or not rainfall exceeds 10 mm), according to my explorations and tests, is the simple GLM model with *SOI* as the only explanatory variable. I am certain the model could be made better but I had trouble getting the more complicated models to work or be able to compare them to the three models that I explored in this project. 
+
+Overall, I think the model I chose works well for this data and models the log-odds or rainfall exceeding 10 mm at Quilpie, Queensland, Australia from 1921 to 1988 sufficiently. I think there could have been more statistics and diagnostics to compare the models but I found it quite difficult due to the significant differences between the models and their assumptions. 
+
+\newpage
+
+# Appendix
+
+```{r code2, eval = FALSE, purl = FALSE}
+# libraries
+library(GLMsData)
+library(glmmML)
+library(lme4)
+library(nlme)
+library(gee)
+library(dplyr)
+library(arm)
+
+# getting the data
+data(quilpie)
+
+# changing Phase to factor
+quilpie$Phase <- factor(quilpie$Phase)
+attach(quilpie)
+
+# plots
+par(mfrow = c(1, 2))
+y0 <- subset(quilpie, y == 0)
+y1 <- subset(quilpie, y == 1)
+barplot(table(y0$Phase), xlab="Phase", ylab="count of y = 0", ylim=c(0,14))
+barplot(table(y1$Phase), xlab="Phase", ylab="count of y = 1")
+par(mfrow = c(1, 2))
+boxplot(y, SOI, ylab= "SOI", xlab = "y", names = c(0,1))
+plot(Phase, SOI, ylab= "SOI", xlab = "Phase", names = c(1,2,3,4,5))
+
+# modeling variance
+trials <- 0
+successes <- 0
+for (x in 1:5) {
+  s = subset(quilpie,Phase==x)
+  successes <- append(successes, sum(s$y))
+  trials <- append(trials, nrow(s))
+}
+bin_dat <- cbind(successes=successes, failures = trials-successes, 
+                 Phase= c(0,1,2,3,4,5))[2:6,]
+
+variance_mod <- glm(cbind(successes, failures) ~ factor(Phase), 
+                    family = binomial(), data = data.frame(bin_dat))
+summary(variance_mod)
+
+# first model
+glm_mod <- glm(y ~ SOI, family=binomial)
+summary(glm_mod)
+#plot(residuals(glm_mod, type = "pearson")) +
+#  abline(h=0)
+
+# second model
+glm_mod2 <- glm(y ~ SOI*Phase, family=binomial)
+summary(glm_mod2)
+#plot(residuals(glm_mod2, type = "pearson")) +
+#  abline(h=0)
+
+# third model
+glmm_mod <- glmer(y ~ SOI + (1|Phase), family = binomial)
+summary(glmm_mod)
+#plot(residuals(glmm_mod, type = "pearson")) +
+#abline(h=0)
+
+# AIC for all three models
+AIC(glm_mod,glm_mod2, glmm_mod)
+
+# binned plots for first two models
+par(mfrow = c(1, 1))
+binnedplot(fitted(glm_mod),residuals(glm_mod, type = "response"))
+
+binnedplot(fitted(glm_mod2),residuals(glm_mod2, type = "response"))
+
+# best fit
+summary(glm_mod)
+```
+
+```{r code, eval=FALSE, include = FALSE, purl = FALSE}
+library(GLMsData)
+library(glmmML)
+library(lme4)
+library(nlme)
+library(gee)
+library(dplyr)
+data(quilpie)
+attach(quilpie)
+
+print("Variance of y, when Phase is")
+for (x in 1:5) {
+  s = subset(quilpie, Phase == x, select = c(y))
+  print(paste(x, "->", round(var(s$y),2)))
+}
+
+# Plots
+par(mfrow = c(1, 2))
+boxplot(y, Phase, ylab= "Phase", xlab = "y", names = c(0,1))
+boxplot(y, SOI, ylab= "SOI", xlab = "y", names = c(0,1))
+
+par(mfrow = c(1, 1))
+plot(Phase, SOI, ylab= "SOI", xlab = "Phase", names = c(0,1,2,3,4,5))
+
+# Simple GLM
+glm_mod <- glm(y ~ SOI, family=binomial)
+summary(glm_mod)
+
+# GLM with interaction
+glm_mod2 <- glm(y ~ SOI*Phase, family=binomial)
+summary(glm_mod2)
+
+# GLMM
+glmm_mod <- glmer(y ~ SOI + (1|Phase), family = binomial)
+summary(glmm_mod)
+
+# GEE model
+data_gee <- arrange(quilpie, Phase) # arranging the data to work with gee
+gee_mod <- gee(y ~ SOI*Phase, id=Phase, family = binomial, corstr = "exchangeable", 
+               data = data_gee)
+
+summary(gee_mod)
+
+# Quasibinomial GLM
+quasi_mod <- glm(y ~ SOI*Phase, family = quasibinomial(link = "logit"))
+summary(quasi_mod)
+
+# Model comparison
+AIC(glm_mod,glm_mod2, glmm_mod)
+
+print("Interaction GLM:")
+summary(glm_mod2)$coef
+print("GEE:")
+summary(gee_mod)$coef
+print("Quasibinomial interaction GLM:")
+summary(quasi_mod)$coef
+
+# GEE residuals
+plot(residuals(gee_mod, type = "response")) +
+  abline(h=0)
+
+# New GEE model with quadratic Phase
+gee_mod2 <- gee(y ~ SOI:Phase + I(Phase)^2, id=Phase, family = binomial, 
+                corstr = "exchangeable", data = data_gee)
+
+summary(gee_mod2)
+
+# New GEE residuals
+plot(residuals(gee_mod2, type = "response")) +
+  abline(h=0)
+```
+
+
+
+
+
