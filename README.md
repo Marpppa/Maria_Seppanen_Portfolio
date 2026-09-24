@@ -1,6 +1,6 @@
 # Maria_Seppanen_Portfolio
 
-This is my portfolio, mostly concisting of course projects from my studies. There are projects in different languages and utilizing many different types of programming. 
+Thiis repository consists of course projects from my studies. There are projects in different languages and utilizing many different types of programming. 
 
 ## The course work currently found
 
